@@ -9,10 +9,10 @@ INPUTDIR=images/input
 TOSCALEDIR=images/to_scaled
 SCALEDDIR=images/scaled
 OUTPUTDIR=images/output
-TMP=/tmp
 
 extention=".png"
 scalingmode="skip"
+extendmode="plaincolor"
 
 targetres=${OUTPUTW}x${OUTPUTH}
 
@@ -21,7 +21,7 @@ mkdir -p $OUTPUTDIR $TOSCALEDIR $SCALEDDIR
 
 case $scalingmode in
 "skip")
-  cp $INPUTDIR/* $SCALEDDIR
+  SCALEDDIR=$INPUTDIR
   ;;
 "waifu2x")
   cp $INPUTDIR/* $TOSCALEDIR
@@ -36,24 +36,8 @@ esac
 
 [ ! -d $SCALEDDIR ] && echo "Error in scaling" && exit 1
 
-for img_path in "$SCALEDDIR"/*; do
-  for name in $(basename "$img_path")$extention; do
-    echo "Processing $name"
+inputs=$(find $SCALEDDIR -type f -exec file {} \; | awk -F: '{ if ($2 ~/[Ii]mage|EPS/) print $1}')
 
-    extended="$TMP/extended_$name"
-    extended_cutted="$TMP/extended_cutted_$name"
-    extended_fill="$TMP/extended_fill_$name"
-
-    echo "Generating transparent extended image"
-    convert "$img_path" -background transparent -resize "$targetres>" -gravity center -extent $targetres "$extended"
-
-    echo "Generating transparent extended cutted image"
-    convert "$extended" \( -size $(($(identify -format "%w" "$img_path") - 2))x$(($(identify -format "%h" "$img_path") - 2)) xc:none \) -alpha set -gravity center -compose copy -composite "$extended_cutted"
-
-    echo "Generating background image"
-    convert "$extended_cutted" txt:- | grep -v ImageMagick | grep -v 'graya(0,0)' | grep -v none | sed -e 's/: ([0-9,]\+)  #[0-9A-Z]\+  /,/' |  convert "$extended_cutted" -alpha off -sparse-color shepards '@-' "$extended_fill"
-
-    echo "Generating final image"
-    convert "$extended_fill" "$extended" -composite "$OUTPUTDIR/$name"
-  done
-done
+# shellcheck source=/usr/bin/env_parallel.sh
+. "$(command -v env_parallel.sh)"
+printf '%s' "$inputs" | env_parallel --progress --bar ./extend.sh {} "$extendmode" $targetres '$(basename {})'$extention "$OUTPUTDIR"
